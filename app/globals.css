@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+:root {
+  --background: #FFF7E6; /* Cream */
+  --foreground: #D4AF37; /* Gold */
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #2A2A2A; /* Deep charcoal to complement gold */
+    --foreground: #FFD966; /* Soft gold for dark mode */
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+input,
+select,
+textarea {
+  color: #8A6F2D; /* Muted gold-brown for text fields */
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #C8B27A; /* Light gold placeholder */
+  opacity: 1;
+}
+
+select {
+  color: #8A6F2D;
+}
