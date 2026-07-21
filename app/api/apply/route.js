@@ -17,7 +17,7 @@ export async function POST(req) {
 
     // Honeypot anti-spam
     const website = String(form.get("website") || "").trim();
-
+  console.log("Honeypot field value:", website);  
     if (website) {
       console.warn("Honeypot triggered");
       return Response.json({ ok: true });
