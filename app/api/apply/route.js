@@ -1,52 +1,139 @@
 import nodemailer from "nodemailer";
 
+export const runtime = "nodejs";
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 export async function POST(req) {
   try {
     const form = await req.formData();
 
     // Honeypot anti-spam
-    if (form.get("website")) {
+    const website = String(form.get("website") || "").trim();
+
+    if (website) {
+      console.warn("Honeypot triggered");
       return Response.json({ ok: true });
     }
 
-    const name = form.get("name") || "";
-    const email = form.get("email") || "";
-    const phone = form.get("phone") || "";
-    const dob = form.get("dob") || "";
-    const address = form.get("address") || "";
-    const employmentType = form.get("employmentType") || "";
-    const location = form.get("location") || "";
-    const position = form.get("position") || "";
-    const experience = form.get("experience") || "";
+    const name = String(form.get("name") || "").trim();
+    const email = String(form.get("email") || "").trim();
+    const phone = String(form.get("phone") || "").trim();
+    const dob = String(form.get("dob") || "").trim();
+    const address = String(form.get("address") || "").trim();
+    const employmentType = String(
+      form.get("employmentType") || ""
+    ).trim();
+    const location = String(form.get("location") || "").trim();
+    const position = String(form.get("position") || "").trim();
+    const experience = String(form.get("experience") || "").trim();
     const resume = form.get("resume");
+
+    if (!name || !email || !phone || !position) {
+      return Response.json(
+        {
+          ok: false,
+          error: "Please complete all required fields.",
+        },
+        { status: 400 }
+      );
+    }
+
+    const emailUser = process.env.EMAIL_USER;
+    const emailPassword = process.env.EMAIL_PASSWORD;
+    const emailFrom = process.env.EMAIL_FROM;
+    const hrEmail = process.env.HR_EMAIL;
+
+    if (!emailUser || !emailPassword || !emailFrom || !hrEmail) {
+      console.error("Missing email environment variables", {
+        EMAIL_USER: Boolean(emailUser),
+        EMAIL_PASSWORD: Boolean(emailPassword),
+        EMAIL_FROM: Boolean(emailFrom),
+        HR_EMAIL: Boolean(hrEmail),
+      });
+
+      return Response.json(
+        {
+          ok: false,
+          error: "The email service is not configured.",
+        },
+        { status: 500 }
+      );
+    }
 
     const transporter = nodemailer.createTransport({
       host: "mail.privateemail.com",
-      port: 465,
-      secure: true,
+      port: 587,
+      secure: false,
+      requireTLS: true,
       auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD,
+        user: emailUser,
+        pass: emailPassword,
       },
     });
 
-    let attachment = null;
+    // This makes SMTP failures easier to identify in Vercel logs
+    await transporter.verify();
 
-    if (resume && resume.size > 0) {
-      const buffer = Buffer.from(await resume.arrayBuffer());
+    const attachments = [];
 
-      attachment = {
+    if (resume instanceof File && resume.size > 0) {
+      const allowedTypes = [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ];
+
+      const maximumSize = 5 * 1024 * 1024;
+
+      if (!allowedTypes.includes(resume.type)) {
+        return Response.json(
+          {
+            ok: false,
+            error: "Resume must be a PDF, DOC, or DOCX file.",
+          },
+          { status: 400 }
+        );
+      }
+
+      if (resume.size > maximumSize) {
+        return Response.json(
+          {
+            ok: false,
+            error: "Resume must be no larger than 5 MB.",
+          },
+          { status: 400 }
+        );
+      }
+
+      attachments.push({
         filename: resume.name,
-        content: buffer,
-      };
+        content: Buffer.from(await resume.arrayBuffer()),
+        contentType: resume.type,
+      });
     }
 
-    const safeExperience = String(experience).replace(/\n/g, "<br />");
+    const safeName = escapeHtml(name);
+    const safeEmail = escapeHtml(email);
+    const safePhone = escapeHtml(phone);
+    const safeDob = escapeHtml(dob);
+    const safeAddress = escapeHtml(address);
+    const safeEmploymentType = escapeHtml(employmentType);
+    const safeLocation = escapeHtml(location);
+    const safePosition = escapeHtml(position);
+    const safeExperience = escapeHtml(experience).replace(/\n/g, "<br />");
 
-    // Email to HR
+    // Email sent to company inbox
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM,
-      to: process.env.HR_EMAIL,
+      from: emailFrom,
+      to: hrEmail,
       replyTo: email,
       subject: `New Job Application – ${position || "Applicant"}`,
       text: `
@@ -56,7 +143,9 @@ Name: ${name}
 Email: ${email}
 Phone: ${phone}
 Date of Birth: ${dob}
-Location: ${address}
+Address: ${address}
+Location: ${location}
+Employment Type: ${employmentType}
 Position: ${position}
 
 Experience:
@@ -64,40 +153,43 @@ ${experience}
       `,
       html: `
         <div style="font-family:Arial,sans-serif;background:#f4f7f4;padding:24px;color:#111;">
-          <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #d9e5dc;">
-            
-            <div style="background:#166534;color:#ffffff;padding:20px;">
+          <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #d9e5dc;">
+            <div style="background:#166534;color:#fff;padding:20px;">
               <h2 style="margin:0;font-size:22px;">New Job Application</h2>
-              <p style="margin:6px 0 0;color:#dcfce7;">Golden Harvest Grove Careers</p>
+              <p style="margin:6px 0 0;color:#dcfce7;">
+                Golden Harvest Grove Careers
+              </p>
             </div>
 
             <div style="padding:22px;">
-              <p><strong>Name:</strong> ${name}</p>
-              <p><strong>Email:</strong> ${email}</p>
-              <p><strong>Phone:</strong> ${phone}</p>
-              <p><strong>Date of Birth:</strong> ${dob}</p>
-              <p><strong>Address:</strong> ${address}</p>
-              <p><strong>Employment Type:</strong> ${employmentType}</p>
-              <p><strong>Position:</strong> ${position}</p>
+              <p><strong>Name:</strong> ${safeName}</p>
+              <p><strong>Email:</strong> ${safeEmail}</p>
+              <p><strong>Phone:</strong> ${safePhone}</p>
+              <p><strong>Date of Birth:</strong> ${safeDob || "Not provided"}</p>
+              <p><strong>Address:</strong> ${safeAddress || "Not provided"}</p>
+              <p><strong>Location:</strong> ${safeLocation || "Not provided"}</p>
+              <p><strong>Employment Type:</strong> ${safeEmploymentType || "Not provided"}</p>
+              <p><strong>Position:</strong> ${safePosition}</p>
 
               <hr style="border:none;border-top:1px solid #e5e7eb;margin:20px 0;" />
 
-              <h3 style="color:#166534;margin-bottom:8px;">Experience / Skills</h3>
-              <p style="line-height:1.6;">${safeExperience}</p>
+              <h3 style="color:#166534;margin-bottom:8px;">
+                Experience / Skills
+              </h3>
 
-              <p style="margin-top:20px;font-size:13px;color:#555;">
-                Resume attachment included if the applicant uploaded one.
+              <p style="line-height:1.6;">
+                ${safeExperience || "Not provided"}
               </p>
             </div>
           </div>
         </div>
       `,
-      attachments: attachment ? [attachment] : [],
+      attachments,
     });
 
-    // Confirmation email to applicant
+    // Confirmation email sent to applicant
     await transporter.sendMail({
-      from: process.env.EMAIL_FROM,
+      from: emailFrom,
       to: email,
       subject: "Application Received – Golden Harvest Grove",
       text: `
@@ -105,30 +197,35 @@ Hello ${name},
 
 We have received your application for the ${position} role.
 
-Our HR department will review your information and contact you if selected.
+Our Human Resources department will review your information and contact you if you are selected for the next stage.
 
 Thank you,
 Golden Harvest Grove Human Resources
       `,
       html: `
         <div style="font-family:Arial,sans-serif;background:#f4f7f4;padding:24px;color:#111;">
-          <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #d9e5dc;">
-            
-            <div style="background:#166534;color:#ffffff;padding:20px;">
-              <h2 style="margin:0;font-size:22px;">Application Received</h2>
-              <p style="margin:6px 0 0;color:#dcfce7;">Golden Harvest Grove Human Resources</p>
+          <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden;border:1px solid #d9e5dc;">
+            <div style="background:#166534;color:#fff;padding:20px;">
+              <h2 style="margin:0;font-size:22px;">
+                Application Received
+              </h2>
+
+              <p style="margin:6px 0 0;color:#dcfce7;">
+                Golden Harvest Grove Human Resources
+              </p>
             </div>
 
             <div style="padding:22px;">
-              <p>Hello <strong>${name}</strong>,</p>
+              <p>Hello <strong>${safeName}</strong>,</p>
 
               <p style="line-height:1.6;">
-                We have received your application for the 
-                <strong>${position}</strong> role.
+                We have received your application for the
+                <strong>${safePosition}</strong> role.
               </p>
 
               <p style="line-height:1.6;">
-                Our HR department will review your information and contact you if selected.
+                Our Human Resources department will review your information
+                and contact you if you are selected for the next stage.
               </p>
 
               <p style="margin-top:22px;">
@@ -142,9 +239,18 @@ Golden Harvest Grove Human Resources
     });
 
     return Response.json({ ok: true });
-
   } catch (err) {
-    console.error(err);
-    return Response.json({ ok: false }, { status: 500 });
+    console.error("APPLICATION EMAIL ERROR:", err);
+
+    return Response.json(
+      {
+        ok: false,
+        error:
+          err instanceof Error
+            ? err.message
+            : "The application email could not be sent.",
+      },
+      { status: 500 }
+    );
   }
 }
